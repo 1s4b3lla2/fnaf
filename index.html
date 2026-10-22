@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Museo chimba</title>
+    <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+    
+</head>
+<body>
+    <!-- aqui van los recursos del proyecto -->
+     <a-assets>
+        <img src="./Assets/pisos.jpg" id="floorTexture">
+        <img src="./Assets/pared.jpg" id="paredTexture">
+        <img src="./Assets/techo.jpg" id="concretoTexture">
+
+        <a-assets-item id="model" src="./Assets/mesa.glb"></a-assets-item>
+        <a-assets-item id="puerta" src="./Assets/puerta.glb"></a-assets-item>
+        <a-assets-item id="puerta2" src="./Assets/puerta2.glb"></a-assets-item>
+        <a-assets-item id="lampara" src="./Assets/Lampara.glb"></a-assets-item>
+        <a-assets-item id="freddy" src="./Assets/Freddy.glb"></a-assets-item>
+        
+             
+   
+        <a-assets-item id="Chica" src="./Assets/Chica.glb"></a-assets-item>
+        <a-assets-item id="Bonny" src="./Assets/Bonny.glb"></a-assets-item>
+        <a-assets-item id="Foxy" src="./Assets/Foxy.glb"></a-assets-item>
+        <a-assets-item id="GoldenFreddy" src="./Assets/GoldenFreddy.glb"></a-assets-item>
+
+
+
+     </a-assets> 
+
+
+
+     <!-- escena del proyecto VR -->
+
+     <a-scene xr-mode-ui="enterAREnabled:false">
+
+     <!-- camara de la esceena -->
+        <a-entity camera look-controls position="0 1.8 2.5"> <a-cursor fuse="true" fuse-timeout="1500" color="red"></a-cursor></a-entity>
+
+      
+
+
+     <!-- piso -->
+        <a-plane src="#floorTexture" material="src #floorTexture;" repeat="2 2" rotation= "-90 0 0" width="10" height="10"></a-plane>
+
+        <!-- muro fondo  -->
+        <a-plane src="#paredTexture" material="src: #paredTexture;" repeat="2 1"; roughness="1"  geometry="height: 4; width: 10" position="0 2 -5"></a-plane>
+
+        <!-- muro izq-->
+        <a-plane src="#paredTexture" material="src: #paredTexture;" repeat="2 1"; roughness="1" geometry="height: 4; width: 10" position="-5 2 0" rotation="0 90 0"></a-plane>
+
+         <!-- muro derecha-->
+        <a-plane src="#paredTexture"  material="src: #paredTexture;" repeat="2 1"; roughness="1" geometry="height: 4; width: 10" position="5 2 0" rotation="0 -90 0"></a-plane>
+
+         <!-- techo -->
+        <a-plane src="#concretoTexture"  geometry="height: 10; width: 10" position="0 4 0" rotation="90 0 0"></a-plane>
+
+         <!-- muro atrás-->
+        <a-plane src="#paredTexture" material="src: #paredTexture;" repeat="2 1"; roughness="1"  geometry="height: 4; width: 10" position="0 2 5" rotation="0 180 0"></a-plane>
+
+        <a-entity gltf-model="#model" position="0 0 -2.008" scale="1.369 1.369 1.369"></a-entity>
+        <a-entity gltf-model="#puerta" position="-2.961 0 3.377" scale="1.358 1.358 1.358" rotation="0 0 0.1"></a-entity> 
+        <a-entity gltf-model="#puerta2" position="2.838 -0.017 3.548" scale="1.358 1.358 1.358" rotation="0 0 0.11459155902616465"></a-entity>
+        <a-entity gltf-model="#lampara" position="0 0.369 1.711" scale="1.358 1.358 1.358" rotation="0 -180 0.1"></a-entity> 
+        
+
+        <a-entity gltf-model="#freddy" position="3.864 -1.366 0.241" scale="0.9 0.9 0.9" rotation="0 0 0" animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"></a-entity>
+       
+        <a-entity gltf-model="#Chica" position="-3.864 -0.940 0.241" scale="0.9 0.9 0.9" rotation="0 90 0"></a-entity>
+        <a-entity gltf-model="#Bonny" position="-3.856 -1.8 -2.928" scale="0.9 0.9 0.9" rotation="0 90 0"></a-entity> 
+        
+        <a-entity gltf-model="#Foxy" position="3.864 -2.095 -2.928" scale="0.9 0.9 0.9" rotation="0 0 0" animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"></a-entity>
+
+
+
+        <a-entity gltf-model="#GoldenFreddy" position="0.124 -1.814 -4.227" scale="0.7 0.7 0.7" rotation="0 -180 0"></a-entity>  
+
+        <!-- Luz  -->
+         <a-light type="ambient" color="#ffffff" intensity="0.3"></a-light>
+         <a-light type="spot" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="0 3.712 1.723" rotation="-50 -180 0"></a-light> 
+         <a-light type="point" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="-0.019 4.243 -3.948" rotation="-73.05211887917996 0 179.96604345059157" light="color: #ffffff; decay: -0.41; intensity: 1.52; penumbra: 1; type: spot"></a-light>
+         <a-light type="point" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="3.252 4.034 -0.951" rotation="-73.05211887917996 -90.47003585115698 179.96604345059157" light="color: #ff0000; decay: -0.62; intensity: 0.5; penumbra: 0.36; type: spot"></a-light> 
+         <a-light type="point" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="-3.252 4.034 -0.951" rotation="-73.05211887917996 90.47003585115698 179.96604345059157" light="color: #00b3ff; decay: -0.62; intensity: 0.5; penumbra: 0.36; type: spot"></a-light> 
+
+        
+
+        
+
+     </a-scene>
+
+    
+</body>
+</html>
