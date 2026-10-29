@@ -3,95 +3,395 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>Museo chimba</title>
-    <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
-    
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <script src="https://unpkg.com/aframe-event-set-component@5.0.0/dist/aframe-event-set-component.min.js"></script>
+    <script src="https://unpkg.com/aframe-troika-text/dist/aframe-troika-text.min.js"></script>
+    <!-- Componentes -->
+    <script>
+        // Boton de audio: cambia el icono play/stop
+        AFRAME.registerComponent('boton-audio', {
+            schema: {
+                iconoPlay: { default: '#icono-audio' },
+                iconoStop: { default: '#icono-detener' }
+            },
+            init: function () {
+                var self = this;
+                this.sonando = false;
+                this.ultimo = 0;
+                this.el.addEventListener('mouseenter', function () { console.log('mirando un boton-audio'); });
+                this.el.addEventListener('click', function () {
+                    var ahora = Date.now();
+                    // Evita la doble activacion (click del mouse + mirada fija)
+                    if (ahora - self.ultimo < 2000) { return; }
+                    self.ultimo = ahora;
+                    console.log('CLICK en boton-audio, sonando =', self.sonando);
+                    if (self.sonando) { self.detener(); } else { self.reproducir(); }
+                });
+                this.el.addEventListener('sound-ended', function () { self.estado(false); });
+            },
+            reproducir: function () {
+                var sound = this.el.components.sound;
+                // Los navegadores bloquean el audio hasta que hay una interaccion: lo reanudamos
+                var listener = this.el.sceneEl.audioListener;
+                if (listener && listener.context.state === 'suspended') { listener.context.resume(); }
+                if (!sound || !sound.loaded) { console.error('El sonido de este boton NO ha cargado (revisa el .mp3 en Assets)'); }
+                this.estado(true);
+                if (sound) { sound.playSound(); }
+            },
+            detener: function () {
+                this.estado(false);
+                if (this.el.components.sound) { this.el.components.sound.stopSound(); }
+            },
+            estado: function (sonando) {
+                this.sonando = sonando;
+                this.el.setAttribute('material', 'src', sonando ? this.data.iconoStop : this.data.iconoPlay);
+            }
+        });
+
+        // Texto con Press Start 2P (usa | para saltar de linea)
+        AFRAME.registerComponent('pixel-text', {
+            schema: {
+                value: { default: '' },
+                color: { default: '#FFFFFF' },
+                size:  { default: 0.07 },
+                width: { default: 1.4 },
+                font:  { default: './Assets/PressStart2P.ttf' }
+            },
+            init: function () {
+                var el = this.el, d = this.data;
+                var props = {
+                    value: d.value.split('|').join('\n'),
+                    color: d.color, fontSize: d.size, maxWidth: d.width,
+                    align: 'center', anchorX: 'center', anchorY: 'middle', lineHeight: 1.6
+                };
+                fetch(d.font)
+                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); props.font = d.font; })
+                    .catch(function (e) {
+                        console.error('No cargo la fuente ' + d.font + ' (' + e.message + '). Uso la fuente por defecto. Revisa el nombre en Assets y que uses un servidor.');
+                    })
+                    .then(function () { el.setAttribute('troika-text', props); });
+            }
+        });
+
+        // Zona invisible: al mirarla suena el audio y al mirarla otra vez se detiene (sin icono)
+        AFRAME.registerComponent('zona-sonido', {
+            init: function () {
+                var el = this.el, self = this;
+                this.sonando = false;
+                this.ultimo = 0;
+                el.addEventListener('click', function () {
+                    var ahora = Date.now();
+                    if (ahora - self.ultimo < 2000) { return; }   // evita doble activacion (mouse + mirada)
+                    self.ultimo = ahora;
+                    var sound = el.components.sound;
+                    if (!sound) { return; }
+                    if (self.sonando) {
+                        self.sonando = false;
+                        sound.stopSound();
+                    } else {
+                        var listener = el.sceneEl.audioListener;
+                        if (listener && listener.context.state === 'suspended') { listener.context.resume(); }
+                        if (!sound.loaded) { console.error('El sonido del escritorio NO ha cargado (revisa Assets/llamada.mp3)'); }
+                        self.sonando = true;
+                        sound.playSound();
+                    }
+                });
+                el.addEventListener('sound-ended', function () { self.sonando = false; });
+            }
+        });
+
+        // Punto en el piso: al mirarlo (o hacer click) mueve al usuario hasta ahi
+        AFRAME.registerComponent('punto-mover', {
+            init: function () {
+                var el = this.el;
+                el.addEventListener('click', function () {
+                    var rig = document.querySelector('#rig');
+                    var desde = rig.object3D.position;
+                    var destino = el.object3D.position;
+                    rig.setAttribute('animation__mover', {
+                        property: 'position',
+                        from: desde.x + ' 0 ' + desde.z,
+                        to: destino.x + ' 0 ' + destino.z,
+                        dur: 700,
+                        easing: 'easeInOutQuad'
+                    });
+                });
+            }
+        });
+
+        // Diagnostico de imagenes y audios
+        window.addEventListener('load', function () {
+            document.querySelectorAll('a-assets img').forEach(function (i) {
+                if (!i.complete || i.naturalWidth === 0) console.error('Imagen NO cargo: ' + i.getAttribute('src'));
+            });
+            document.querySelectorAll('a-assets audio').forEach(function (a) {
+                if (a.error) console.error('Audio NO cargo: ' + a.getAttribute('src'));
+            });
+        });
+    </script>
+
+    <!-- Script para el Jumpscare -->
+    <script>
+        AFRAME.registerComponent('activar-screamer', {
+            // tiempo = milisegundos que hay que mirarlo para que salga el screamer
+            schema: { tiempo: { default: 3000 } },
+            init: function () {
+                let self = this;
+                let el = this.el;
+                let pantalla = document.querySelector('#pantalla-screamer');
+                let video = document.querySelector('#videoScreamer');
+                let sonidoGolden = document.querySelector('#sonidoGolden');
+                let temporizador = null;
+                let activo = false;
+
+                function lanzar() {
+                    activo = true;
+                    pantalla.setAttribute('visible', 'true');
+                    if (sonidoGolden) { sonidoGolden.currentTime = 0; sonidoGolden.play(); }
+                    if (video) { video.currentTime = 0; video.play(); }
+
+                    // Oculta el screamer a los 3 segundos
+                    setTimeout(() => {
+                        pantalla.setAttribute('visible', 'false');
+                        if (video) { video.pause(); }
+                        activo = false;
+                    }, 3000);
+                }
+
+                // Empieza a contar cuando lo miras y cancela si apartas la mirada
+                el.addEventListener('mouseenter', function () {
+                    if (activo) return;
+                    clearTimeout(temporizador);
+                    temporizador = setTimeout(lanzar, self.data.tiempo);
+                });
+                el.addEventListener('mouseleave', function () { clearTimeout(temporizador); });
+            }
+        });
+    </script>
 </head>
 <body>
-    <!-- aqui van los recursos del proyecto -->
-     <a-assets>
-        <img src="./Assets/pisos.jpg" id="floorTexture">
-        <img src="./Assets/pared.jpg" id="paredTexture">
-        <img src="./Assets/techo.jpg" id="concretoTexture">
 
-        <a-assets-item id="model" src="./Assets/mesa.glb"></a-assets-item>
-        <a-assets-item id="puerta" src="./Assets/puerta.glb"></a-assets-item>
-        <a-assets-item id="puerta2" src="./Assets/puerta2.glb"></a-assets-item>
-        <a-assets-item id="lampara" src="./Assets/Lampara.glb"></a-assets-item>
-        <a-assets-item id="freddy" src="./Assets/Freddy.glb"></a-assets-item>
-        
-             
-   
-        <a-assets-item id="Chica" src="./Assets/Chica.glb"></a-assets-item>
-        <a-assets-item id="Bonny" src="./Assets/Bonny.glb"></a-assets-item>
-        <a-assets-item id="Foxy" src="./Assets/Foxy.glb"></a-assets-item>
-        <a-assets-item id="GoldenFreddy" src="./Assets/GoldenFreddy.glb"></a-assets-item>
+    <!-- Escena del proyecto VR -->
+    <a-scene xr-mode-ui="enterAREnabled:false">
 
+        <!-- Recursos del proyecto -->
+        <a-assets>
+            <img src="./Assets/pisos.jpg" id="floorTexture">
+            <img src="./Assets/pared.jpg" id="paredTexture">
+            <img src="./Assets/techo.jpg" id="concretoTexture">
 
+            <img src="./Assets/despausa.png" id="icono-audio">
+            <img src="./Assets/pausa.png" id="icono-detener">
 
-     </a-assets> 
+            <a-asset-item id="model" src="./Assets/mesa.glb"></a-asset-item>
+            <a-asset-item id="puerta" src="./Assets/puerta.glb"></a-asset-item>
+            <a-asset-item id="puerta2" src="./Assets/puerta2.glb"></a-asset-item>
+            <a-asset-item id="lampara" src="./Assets/Lampara.glb"></a-asset-item>
+            <a-asset-item id="freddy" src="./Assets/Freddy.glb"></a-asset-item>
+            <a-asset-item id="soporte" src="./Assets/soporte.glb"></a-asset-item>
 
+            <a-asset-item id="Chica" src="./Assets/Chica.glb"></a-asset-item>
+            <a-asset-item id="Bonny" src="./Assets/Bonny.glb"></a-asset-item>
+            <a-asset-item id="Foxy" src="./Assets/Foxy.glb"></a-asset-item>
+            <a-asset-item id="GoldenFreddy" src="./Assets/GoldenFreddy.glb"></a-asset-item>
 
+            <!-- AUDIOS Y VIDEO JUMPSCARE -->
+            <audio id="sonidoFreddy" src="./Assets/sonidoFreddy.mp3" preload="auto"></audio>
+            <audio id="sonidoFoxy" src="./Assets/sonidoFoxy.mp3" preload="auto"></audio>
+            <audio id="sonidoBonnie" src="./Assets/sonidoBonnie.mp3" preload="auto"></audio>
+            <audio id="sonidoChica" src="./Assets/sonidoChica.mp3" preload="auto"></audio>
+            <audio id="sonidoGolden" src="./Assets/sonidoGolden.mp3" preload="auto"></audio>
+            <audio id="sonidoEscritorio" src="./Assets/llamada.mp3" preload="auto"></audio>
 
-     <!-- escena del proyecto VR -->
+            <!-- Video del Screamer -->
+            <video id="videoScreamer" src="./Assets/screamer.mp4" preload="auto" crossorigin="anonymous"></video>
+        </a-assets>
 
-     <a-scene xr-mode-ui="enterAREnabled:false">
+        <!-- Panel de Bienvenida en la pared del fondo (encima de Golden Freddy) -->
+        <a-entity position="0 3.58 -4.9" rotation="0 0 0">
+            <a-plane class="interactivo" color="#000000" width="6.6" height="0.7" material="shader: flat"
+                     animation__entrar="property: scale; startEvents: mouseenter; to: 1.06 1.06 1.06; dur: 250"
+                     animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 250">
 
-     <!-- camara de la esceena -->
-        <a-entity camera look-controls position="0 1.8 2.5"> <a-cursor fuse="true" fuse-timeout="1500" color="red"></a-cursor></a-entity>
+                <!-- El marco del cartel ahora es negro -->
+                <a-plane color="#000000" width="6.74" height="0.84" position="0 0 -0.005" material="shader: flat"></a-plane>
+                <a-entity pixel-text="value: MUSEO FNAF VR - Por Isabella Bedoya|Mira para interactuar; size: 0.15; color: #FFFFFF; width: 6.3" position="0 0 0.01"></a-entity>
+            </a-plane>
+        </a-entity>
 
-      
+        <!-- Cámara de la escena -->
+        <a-entity id="rig" position="0 0 2.1">
+        <a-entity camera look-controls position="0 1.8 0">
+            <a-cursor
+                fuse="true" fuse-timeout="1500"
+                material="color: red; shader: flat"
+                raycaster="objects: .interactivo; far: 15"
+                animation__fusing="property: scale; startEvents: fusing; from: 1 1 1; to: 0.2 0.2 0.2; dur: 1500"
+                animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 200"
+                animation__clic="property: scale; startEvents: click; from: 0.2 0.2 0.2; to: 1 1 1; dur: 200">
+            </a-cursor>
 
+            <!-- Pantalla Jumpscare: invisible hasta que miras a Golden Freddy -->
+            <a-plane id="pantalla-screamer" src="#videoScreamer" position="0 0 -0.5" width="2" height="2" visible="false" material="shader: flat; transparent: true"></a-plane>
+        </a-entity>
+        </a-entity>
 
-     <!-- piso -->
-        <a-plane src="#floorTexture" material="src #floorTexture;" repeat="2 2" rotation= "-90 0 0" width="10" height="10"></a-plane>
+        <!-- Estructura del museo -->
+        <a-plane src="#floorTexture" material="src: #floorTexture; repeat: 2 2" rotation="-90 0 0" width="10" height="10"></a-plane>
+        <a-plane src="#paredTexture" material="src: #paredTexture; repeat: 2 1; roughness: 1" geometry="height: 4; width: 10" position="0 2 -5"></a-plane>
+        <a-plane src="#paredTexture" material="src: #paredTexture; repeat: 2 1; roughness: 1" geometry="height: 4; width: 10" position="-5 2 0" rotation="0 90 0"></a-plane>
+        <a-plane src="#paredTexture" material="src: #paredTexture; repeat: 2 1; roughness: 1" geometry="height: 4; width: 10" position="5 2 0" rotation="0 -90 0"></a-plane>
+        <a-plane src="#concretoTexture" geometry="height: 10; width: 10" position="0 4 0" rotation="90 0 0"></a-plane>
+        <a-plane src="#paredTexture" material="src: #paredTexture; repeat: 2 1; roughness: 1" geometry="height: 4; width: 10" position="0 2 5" rotation="0 180 0"></a-plane>
 
-        <!-- muro fondo  -->
-        <a-plane src="#paredTexture" material="src: #paredTexture;" repeat="2 1"; roughness="1"  geometry="height: 4; width: 10" position="0 2 -5"></a-plane>
-
-        <!-- muro izq-->
-        <a-plane src="#paredTexture" material="src: #paredTexture;" repeat="2 1"; roughness="1" geometry="height: 4; width: 10" position="-5 2 0" rotation="0 90 0"></a-plane>
-
-         <!-- muro derecha-->
-        <a-plane src="#paredTexture"  material="src: #paredTexture;" repeat="2 1"; roughness="1" geometry="height: 4; width: 10" position="5 2 0" rotation="0 -90 0"></a-plane>
-
-         <!-- techo -->
-        <a-plane src="#concretoTexture"  geometry="height: 10; width: 10" position="0 4 0" rotation="90 0 0"></a-plane>
-
-         <!-- muro atrás-->
-        <a-plane src="#paredTexture" material="src: #paredTexture;" repeat="2 1"; roughness="1"  geometry="height: 4; width: 10" position="0 2 5" rotation="0 180 0"></a-plane>
-
+        <!-- Escenario -->
         <a-entity gltf-model="#model" position="0 0 -2.008" scale="1.369 1.369 1.369"></a-entity>
-        <a-entity gltf-model="#puerta" position="-2.961 0 3.377" scale="1.358 1.358 1.358" rotation="0 0 0.1"></a-entity> 
-        <a-entity gltf-model="#puerta2" position="2.838 -0.017 3.548" scale="1.358 1.358 1.358" rotation="0 0 0.11459155902616465"></a-entity>
-        <a-entity gltf-model="#lampara" position="0 0.369 1.711" scale="1.358 1.358 1.358" rotation="0 -180 0.1"></a-entity> 
-        
+        <a-entity gltf-model="#puerta" position="-2.961 0 3.377" scale="1.358 1.358 1.358" rotation="0 0 0.1"></a-entity>
+        <a-entity gltf-model="#puerta2" position="2.838 -0.017 3.548" scale="1.358 1.358 1.358" rotation="0 0 0.114"></a-entity>
+        <a-entity gltf-model="#lampara" position="0 0.369 1.711" scale="1.358 1.358 1.358" rotation="0 -180 0.1"></a-entity>
 
-        <a-entity gltf-model="#freddy" position="3.864 -1.366 0.241" scale="0.9 0.9 0.9" rotation="0 0 0" animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"></a-entity>
-       
-        <a-entity gltf-model="#Chica" position="-3.864 -0.940 0.241" scale="0.9 0.9 0.9" rotation="0 90 0"></a-entity>
-        <a-entity gltf-model="#Bonny" position="-3.856 -1.8 -2.928" scale="0.9 0.9 0.9" rotation="0 90 0"></a-entity> 
-        
-        <a-entity gltf-model="#Foxy" position="3.864 -2.095 -2.928" scale="0.9 0.9 0.9" rotation="0 0 0" animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"></a-entity>
+        <!-- Animatrónicos rotando -->
+        <a-entity gltf-model="#freddy" position="3.93405 0.14103 0.22669" scale="0.65 0.65 0.65" animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"></a-entity>
+        <a-entity class="chica" gltf-model="#Chica" position="-3.551 -0.54 -0.289" scale="0.72 0.72 0.72" animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"></a-entity>
+        <a-entity gltf-model="#Bonny" position="-3.588 0.108 -2.951" scale="0.65 0.65 0.65" animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"></a-entity>
+        <a-entity gltf-model="#Foxy" position="4.01029 0.15128 -2.928" scale="0.65 0.65 0.65" animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear"></a-entity>
+
+ 
+        <!-- Cuadros de texto de cada animatrónico (en las paredes) -->
+        <!-- Freddy -->
+        <a-entity position="4.95 2.8 0.23" rotation="0 -90 0">
+            <a-plane class="interactivo" color="#000000" width="2" height="1.1" material="shader: flat"
+                     animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 250"
+                     animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 250">
+                <a-entity pixel-text="value: FREDDY\n\n Soy el cantante,\n un oso marron enorme.\n¡Un tipo muy divertido!; size: 0.08; color: #FFFFFF; width: 1.8" position="0 0 0.01"></a-entity>
+            </a-plane>
+        </a-entity>
+
+        <!-- Foxy -->
+        <a-entity position="4.95 2.8 -2.93" rotation="0 -90 0">
+            <a-plane class="interactivo" color="#000000" width="2" height="1.1" material="shader: flat"
+                     animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 250"
+                     animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 250">
+                <a-entity pixel-text="value: FOXY\n\n ¡Ya ha ha harr!\n¡Nunca subestimes la\nastucia de un pirata!; size: 0.08; color: #FFFFFF; width: 1.8" position="0 0 0.01"></a-entity>
+            </a-plane>
+        </a-entity>
+
+        <!-- Chica -->
+        <a-entity position="-4.95 2.8 -0.29" rotation="0 90 0">
+            <a-plane class="interactivo" color="#000000" width="2" height="1.1" material="shader: flat"
+                     animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 250"
+                     animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 250">
+                <a-entity pixel-text="value: CHICA\n\nLet's Eat!\nAhora estamos juntos.; size: 0.08; color: #FFFFFF; width: 1.8" position="0 0 0.01"></a-entity>
+            </a-plane>
+        </a-entity>
+
+        <!-- Bonnie -->
+        <a-entity position="-4.95 2.8 -2.95" rotation="0 90 0">
+            <a-plane class="interactivo" color="#000000" width="2" height="1.1" material="shader: flat"
+                     animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 250"
+                     animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 250">
+                <a-entity pixel-text="value: BONNIE||El conejo guitarrista|Siempre listo para|el solo de la noche; size: 0.08; color: #FFFFFF; width: 1.8" position="0 0 0.01"></a-entity>
+            </a-plane>
+        </a-entity>
 
 
+        <!-- Soportes y botones interactivos de los animatronicos -->
+        <a-entity class="soporte" gltf-model="#soporte" position="-3.551 -1.9 -0.289" scale="0.9 0.9 0.9" rotation="0 -90 0">
+            <a-plane class="interactivo boton-clic"
+                material="src: #icono-audio; transparent: true;"
+                sound="refDistance: 2; src: #sonidoChica; volume: 2"
+                boton-audio
+                animation__entrar="dur: 200; property: scale; startEvents: mouseenter; to: 1.15 1.15 1.15"
+                animation__salir="dur: 200; property: scale; startEvents: mouseleave; to: 1 1 1"
+                width="1" height="1" position="-2 3 0" rotation="0 90 0">
+            </a-plane>
+        </a-entity>
 
-        <a-entity gltf-model="#GoldenFreddy" position="0.124 -1.814 -4.227" scale="0.7 0.7 0.7" rotation="0 -180 0"></a-entity>  
+        <a-entity gltf-model="#soporte" position="3.864 -1.9 -2.928" scale="0.9 0.9 0.9" rotation="0 -90 0">
+            <a-plane class="interactivo boton-clic"
+                material="src: #icono-audio; transparent: true;"
+                sound="refDistance: 2; src: #sonidoFoxy; volume: 2"
+                boton-audio
+                animation__entrar="dur: 200; property: scale; startEvents: mouseenter; to: 1.15 1.15 1.15"
+                animation__salir="dur: 200; property: scale; startEvents: mouseleave; to: 1 1 1"
+                width="1" height="1" position="-2 3 0" rotation="0 90 0">
+            </a-plane>
+        </a-entity>
 
-        <!-- Luz  -->
-         <a-light type="ambient" color="#ffffff" intensity="0.3"></a-light>
-         <a-light type="spot" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="0 3.712 1.723" rotation="-50 -180 0"></a-light> 
-         <a-light type="point" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="-0.019 4.243 -3.948" rotation="-73.05211887917996 0 179.96604345059157" light="color: #ffffff; decay: -0.41; intensity: 1.52; penumbra: 1; type: spot"></a-light>
-         <a-light type="point" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="3.252 4.034 -0.951" rotation="-73.05211887917996 -90.47003585115698 179.96604345059157" light="color: #ff0000; decay: -0.62; intensity: 0.5; penumbra: 0.36; type: spot"></a-light> 
-         <a-light type="point" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="-3.252 4.034 -0.951" rotation="-73.05211887917996 90.47003585115698 179.96604345059157" light="color: #00b3ff; decay: -0.62; intensity: 0.5; penumbra: 0.36; type: spot"></a-light> 
+        <a-entity gltf-model="#soporte" position="3.864 -1.9 0.241" scale="0.9 0.9 0.9" rotation="0 -90 0">
+            <a-plane class="interactivo boton-clic"
+                material="src: #icono-audio; transparent: true;"
+                sound="refDistance: 2; src: #sonidoFreddy; volume: 2"
+                boton-audio
+                animation__entrar="dur: 200; property: scale; startEvents: mouseenter; to: 1.15 1.15 1.15"
+                animation__salir="dur: 200; property: scale; startEvents: mouseleave; to: 1 1 1"
+                width="1" height="1" position="-2 3 0" rotation="0 90 0">
+            </a-plane>
+        </a-entity>
 
-        
+        <a-entity gltf-model="#soporte" position="-3.588 -1.9 -2.951" scale="0.9 0.9 0.9" rotation="0 -90 0">
+            <a-plane class="interactivo boton-clic"
+                material="src: #icono-audio; transparent: true;"
+                sound="refDistance: 2; src: #sonidoBonnie; volume: 2"
+                boton-audio
+                animation__entrar="dur: 200; property: scale; startEvents: mouseenter; to: 1.15 1.15 1.15"
+                animation__salir="dur: 200; property: scale; startEvents: mouseleave; to: 1 1 1"
+                width="1" height="1" position="-2 3 0" rotation="0 90 0">
+            </a-plane>
+        </a-entity>
 
-        
+        <!-- Boton de llamada INVISIBLE en el OTRO MURO -->
+        <a-plane class="interactivo"
+            material="opacity: 0; transparent: true; depthWrite: false; side: double"
+            sound="refDistance: 3; src: #sonidoEscritorio; volume: 2"
+            zona-sonido
+            width="2" height="2" position="0 1.5 4.9" rotation="0 180 0">
+        </a-plane>
 
-     </a-scene>
+        <!-- Golden Freddy con Jumpscare activo -->
+        <a-entity gltf-model="#GoldenFreddy" position="0.124 -1.814 -4.227" scale="0.7 0.7 0.7" rotation="0 -180 0"></a-entity>
 
-    
+        <!-- Zona invisible en la cabeza de Golden Freddy: mirarla 3 s activa el screamer -->
+        <a-plane class="interactivo" activar-screamer="tiempo: 3000"
+            material="opacity: 0; transparent: true; depthWrite: false"
+            width="1.2" height="1" position="0.12 2.65 -3.9"></a-plane>
+
+        <!-- Puntos de movimiento en el piso (alineados: x = -2 / 2, z = 0 / -2.94) -->
+        <!-- Inicio -->
+        <a-circle class="interactivo punto" punto-mover position="0 0.02 2.1" rotation="-90 0 0" radius="0.35" color="#D3D3D3" opacity="0.8" material="shader: flat; transparent: true"
+                  animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 200"
+                  animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 200"></a-circle>
+        <!-- Freddy -->
+        <a-circle class="interactivo punto" punto-mover position="2 0.02 0" rotation="-90 0 0" radius="0.35" color="#D3D3D3" opacity="0.8" material="shader: flat; transparent: true"
+                  animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 200"
+                  animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 200"></a-circle>
+        <!-- Foxy -->
+        <a-circle class="interactivo punto" punto-mover position="2 0.02 -2.94" rotation="-90 0 0" radius="0.35" color="#D3D3D3" opacity="0.8" material="shader: flat; transparent: true"
+                  animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 200"
+                  animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 200"></a-circle>
+        <!-- Chica -->
+        <a-circle class="interactivo punto" punto-mover position="-2 0.02 0" rotation="-90 0 0" radius="0.35" color="#D3D3D3" opacity="0.8" material="shader: flat; transparent: true"
+                  animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 200"
+                  animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 200"></a-circle>
+        <!-- Bonnie -->
+        <a-circle class="interactivo punto" punto-mover position="-2 0.02 -2.94" rotation="-90 0 0" radius="0.35" color="#D3D3D3" opacity="0.8" material="shader: flat; transparent: true"
+                  animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 200"
+                  animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 200"></a-circle>
+
+        <!-- Escritorio -->
+        <a-circle class="interactivo punto" punto-mover position="0 0.02 0" rotation="-90 0 0" radius="0.35"
+                  color="#D3D3D3" opacity="0.8" material="shader: flat; transparent: true"
+                  animation__entrar="property: scale; startEvents: mouseenter; to: 1.3 1.3 1.3; dur: 200"
+                  animation__salir="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 200"></a-circle>
+
+        <!-- Luces -->
+        <a-light type="ambient" color="#ffffff" intensity="0.3"></a-light>
+        <a-light type="spot" color="#ffbb00" intensity="1.15" decay="0.3" penumbra="0.3" position="0 3.712 1.723" rotation="-50 -180 0"></a-light>
+        <a-light type="spot" color="#ffffff" intensity="1.52" decay="-0.41" penumbra="1" position="-0.019 4.243 -3.948" rotation="-73 0 180"></a-light>
+        <a-light type="spot" color="#ff0000" intensity="0.5" decay="-0.62" penumbra="0.36" position="3.252 4.034 -0.951" rotation="-73 -90 180"></a-light>
+        <a-light type="spot" color="#00b3ff" intensity="0.5" decay="-0.62" penumbra="0.36" position="-3.252 4.034 -0.951" rotation="-73 90 180"></a-light>
+
+    </a-scene>
 </body>
 </html>
